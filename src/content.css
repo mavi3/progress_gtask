@@ -1,0 +1,84 @@
+/*
+ * Ícono del estado "en progreso" que agrega content.js.
+ *
+ * Mouse encima o foco de teclado = vista previa de lo que hará el siguiente
+ * clic, igual que el check que muestra Google:
+ *   todo      normal: círculo de Google.     activo: medio círculo (neutro).
+ *   progress  normal: medio círculo naranjo. activo: check de Google.
+ * data-gtp-fresh mantiene el medio círculo naranjo hasta que el mouse o el
+ * foco salgan, justo después del clic que marcó la tarea.
+ *
+ * Google dibuja el check en un elemento aparte (data-gtp-overlay), hermano
+ * del botón; por eso se oculta con :has() desde el contenedor común.
+ */
+
+:root {
+  --gtp-color: #e8710a;
+}
+
+[data-gtp-rel] {
+  position: relative !important;
+}
+
+.gtp-icon {
+  position: absolute !important;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: var(--gtp-ring, 2px) solid currentColor;
+  border-radius: 50%;
+  color: var(--gtp-neutral, currentColor);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Mitad derecha rellena. */
+.gtp-icon::after {
+  content: '';
+  flex: none;
+  width: var(--gtp-pie, 10px);
+  height: var(--gtp-pie, 10px);
+  border-radius: 50%;
+  background: conic-gradient(currentColor 0deg 180deg, transparent 180deg 360deg);
+}
+
+/* Cuando se ve el ícono propio se oculta el de Google: el SVG del botón y el
+   check que Google dibuja aparte. */
+[data-gtp-state='todo']:is(:hover, :focus-visible) svg,
+[data-gtp-state='progress']:not(:hover, :focus-visible) svg,
+[data-gtp-state='progress'][data-gtp-fresh] svg,
+[data-gtp-wrap]:has([data-gtp-state='todo']:is(:hover, :focus-visible)) [data-gtp-overlay],
+[data-gtp-wrap]:has([data-gtp-state='progress']:not(:hover, :focus-visible)) [data-gtp-overlay],
+[data-gtp-wrap]:has([data-gtp-state='progress'][data-gtp-fresh]) [data-gtp-overlay] {
+  visibility: hidden !important;
+}
+
+[data-gtp-state='todo']:is(:hover, :focus-visible) > .gtp-icon,
+[data-gtp-state='progress']:not(:hover, :focus-visible) > .gtp-icon,
+[data-gtp-state='progress'][data-gtp-fresh] > .gtp-icon {
+  opacity: 1;
+}
+
+[data-gtp-state='progress'] > .gtp-icon {
+  color: var(--gtp-color);
+}
+
+/* Ítem propio en el menú de la tarea. Google resalta sus ítems agregando una
+   clase desde su JavaScript (.z80M1.FwR7Pc en nov 2026) con esta variable de
+   color; el ítem propio usa la misma variable y un gris si deja de existir. */
+.gtp-menu-item.gtp-hover,
+.gtp-menu-item:focus-visible {
+  background-color: var(--quantum-item-highlighted-bg-color, rgba(128, 128, 128, 0.2)) !important;
+}
+
+.gtp-menu-item:focus {
+  outline: none;
+}
+
+/* Modo diagnóstico: contorno sobre cada botón de completar detectado. */
+[data-gtp-toggle] {
+  outline: 1px dashed #d93025 !important;
+  outline-offset: 1px;
+}

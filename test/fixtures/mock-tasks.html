@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mock Google Tasks</title>
+    <!--
+      Imitación mínima de Google Tasks para probar content.js.
+      Variantes (?variant=):
+        es: sin roles de fila, botón role="button" con aria-label en español.
+        en: filas role="listitem", botón role="checkbox" con aria-checked.
+        strike: botón role="checkbox" sin aria-label ni aria-checked;
+                completado solo se nota por el tachado.
+        google: copia la estructura real de tasks.google.com (nov 2026):
+                botón con aria-label "Marcar como completada: <título>" y
+                aria-pressed, data-task-id en la tarjeta y el check del hover
+                como imagen de fondo de un div hermano del botón. Incluye dos
+                tareas con el mismo título y una con título largo. Tiene el
+                menú de la tarea (clic derecho o ⋮): un único role="menu" que
+                se reutiliza, ítems que actúan por data-action (como jsaction)
+                y cierre con Escape. Hay una segunda lista con una sola tarea.
+      Imita también lo que hace Google: delegación de eventos en document
+      (como jsaction) y re-render completo de la lista en cada cambio.
+    -->
+    <style>
+      body { font-family: Arial, sans-serif; background: #1f1f1f; color: #e3e3e3; }
+      .task { display: flex; gap: 8px; align-items: flex-start; padding: 6px; }
+      .cb { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #c4c7c5; }
+      /* Como Google: el hover oculta el círculo y muestra el check. */
+      .cb .check { display: none; }
+      .cb:hover .ring, .done .cb .ring { display: none; }
+      .cb:hover .check, .done .cb .check { display: block; }
+      .done .title { text-decoration: line-through; }
+      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+      /* Variante google */
+      .g-slot { position: relative; width: 28px; height: 28px; flex: none; }
+      .g-wrap { position: absolute; left: 0; bottom: 0; width: 100%; height: 28px; }
+      .g-wrap .cb { position: absolute; left: 0; bottom: 0; width: 28px; height: 28px; padding: 0; border: 0; background: none; }
+      .g-wrap .cb .ring-box { display: block; width: 20px; height: 20px; }
+      .g-overlay { position: absolute; left: 0; bottom: 0; width: 28px; height: 28px; pointer-events: none;
+        background-repeat: no-repeat; background-position: center; background-size: 20px; }
+      .g-wrap:hover .g-overlay, .g-wrap:focus-within .g-overlay, .done .g-overlay {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23a8c7fa' d='M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z'/%3E%3C/svg%3E"); }
+      .variant-google .cb .check, .variant-google .cb:hover .check, .variant-google .done .cb .check { display: none; }
+      .variant-google .cb:hover .ring { display: block; }
+      .variant-google .done .cb .ring { display: none; }
+      .menu { position: absolute; z-index: 10; min-width: 200px; padding: 6px 0; background: #36373a; border-radius: 4px;
+        --quantum-item-highlighted-bg-color: rgb(60, 64, 67); }
+      .menu[hidden] { display: none; }
+      .mi { display: flex; gap: 12px; align-items: center; height: 32px; padding: 0 12px; cursor: pointer; color: #e3e3e3; }
+      /* Como Google: el resaltado lo pone el JavaScript del menú con una clase. */
+      .mi.hl { background-color: var(--quantum-item-highlighted-bg-color); }
+      .mi svg { width: 20px; height: 20px; fill: currentColor; }
+      .opts { background: none; border: 0; color: #e3e3e3; cursor: pointer; }
+      .icon { font-family: 'Google Symbols'; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="header"><span>Mis tareas</span></div>
+      <div class="add"><button id="add">Agregar una tarea</button></div>
+      <div id="active"></div>
+      <div class="completed-section">
+        <button id="completed-header">Completadas (<span id="ccount"></span>)</button>
+        <div id="completed"></div>
+      </div>
+    </div>
+    <script>
+      const variant = new URLSearchParams(location.search).get('variant') || 'es';
+      document.body.classList.add(`variant-${variant}`);
+      const g = (window.__g = { clicks: 0, mousedowns: 0, keys: 0, headerClicks: 0 });
+      const tasks = [
+        { id: 't1', title: 'Comparar las propuestas de extender retroactivos', notes: 'juntarlo con el motor', done: false },
+        { id: 't2', title: 'Ver como pasar de NE a Notas', notes: '', done: false },
+        { id: 't3', title: '📌 Definir estrategia de roll out', notes: 'Análisis', done: true },
+      ];
+      if (variant === 'google') {
+        tasks.push(
+          { id: 't4', title: 'Ver como pasar de NE a Notas', notes: '', done: false },
+          { id: 't5', title: 'Revisar pendientes del cierre: ' + 'detalle largo '.repeat(10).trim(), notes: '', done: false },
+          { id: 't6', title: 'Conectar workspace con product center', notes: '', done: false, list: 'equipo' },
+        );
+        document.getElementById('app').insertAdjacentHTML(
+          'beforeend',
+          `<div id="list2">
+             <div class="header"><span>Equipo</span> <button id="list2-opts" class="opts" aria-label="Opciones de lista">⋮</button></div>
+             <div id="list2-tasks"></div>
+           </div>
+           <div id="task-menu" class="menu" role="menu" tabindex="0" hidden>
+             ${[['top', 'Mover a la parte superior', false], ['date', 'Agregar fecha límite', true], ['sub', 'Agregar subtarea', true], ['delete', 'Borrar', true]]
+               .map(([action, label, icon]) => `<span class="mi" role="menuitem" tabindex="-1" data-action="${action}" aria-label="${label}"><div aria-hidden="true">${icon ? '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>' : ''}</div><div><div>${label}</div></div></span>`)
+               .join('')}
+           </div>
+           <div id="list-menu" class="menu" role="menu" tabindex="0" hidden>
+             <span class="mi" role="menuitem" tabindex="-1" data-action="rename"><div aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg></div><div><div>Cambiar nombre</div></div></span>
+           </div>`,
+        );
+        Object.assign(g, { menuActions: 0, menuFor: null });
+        const taskMenu = document.getElementById('task-menu');
+        const listMenu = document.getElementById('list-menu');
+        const openMenu = (menu, x, y) => {
+          for (const m of [taskMenu, listMenu]) m.hidden = true;
+          menu.style.left = `${x}px`;
+          menu.style.top = `${y}px`;
+          menu.hidden = false;
+          menu.focus();
+        };
+        document.addEventListener('contextmenu', (e) => {
+          const row = e.target.closest('.task');
+          if (!row) return;
+          e.preventDefault();
+          g.menuFor = row.dataset.mockId;
+          openMenu(taskMenu, e.clientX, e.clientY);
+        });
+        document.addEventListener('click', (e) => {
+          const opts = e.target.closest('.task .opts');
+          if (opts) {
+            g.menuFor = opts.closest('.task').dataset.mockId;
+            const r = opts.getBoundingClientRect();
+            openMenu(taskMenu, r.left, r.bottom);
+          }
+          if (e.target.closest('#list2-opts')) {
+            const r = e.target.getBoundingClientRect();
+            openMenu(listMenu, r.left, r.bottom);
+          }
+          const action = e.target.closest('.mi[data-action]');
+          if (action) {
+            g.menuActions++;
+            action.closest('.menu').hidden = true;
+          }
+        });
+        document.addEventListener('keydown', (e) => {
+          const menu = e.target.closest && e.target.closest('.menu');
+          if (menu && e.key === 'Escape') menu.hidden = true;
+          // Enter activa el ítem con foco, como el menú de Google.
+          const focused = e.target.closest && e.target.closest('.mi[data-action]');
+          if (focused && e.key === 'Enter') focused.click();
+        });
+        // Resaltado manejado por JavaScript: clase + foco en el ítem bajo el mouse.
+        document.addEventListener('mouseover', (e) => {
+          const item = e.target.closest('.mi[data-action]');
+          if (!item) return;
+          for (const other of item.closest('.menu').querySelectorAll('.mi')) other.classList.remove('hl');
+          item.classList.add('hl');
+          item.focus();
+        });
+        document.addEventListener('mouseout', (e) => {
+          const item = e.target.closest('.mi[data-action]');
+          if (item && !item.contains(e.relatedTarget)) item.classList.remove('hl');
+        });
+      }
+
+      const labels = {
+        es: { todo: 'Marcar como completada', done: 'Marcar como no completada' },
+        en: { todo: 'Mark complete', done: 'Mark incomplete' },
+      };
+
+      function toggleHtml(task) {
+        const svg =
+          '<svg class="ring" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/></svg>' +
+          '<svg class="check" width="24" height="24" viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" fill="currentColor"/></svg>';
+        if (variant === 'en') {
+          return `<div class="cb" role="checkbox" tabindex="0" aria-checked="${task.done}" aria-label="${task.done ? labels.en.done : labels.en.todo}">${svg}</div>`;
+        }
+        if (variant === 'strike') {
+          return `<div class="cb" role="checkbox" tabindex="0">${svg}</div>`;
+        }
+        if (variant === 'google') {
+          return `<div class="g-slot"><div class="g-wrap"><span><button class="cb" aria-pressed="${task.done}" aria-label="Marcar como completada: ${task.title}"><span class="ring-box">${svg}</span></button></span><div class="g-overlay"></div></div></div>`;
+        }
+        return `<div class="cb" role="button" tabindex="0" aria-label="${task.done ? labels.es.done : labels.es.todo}">${svg}</div>`;
+      }
+
+      function titleHtml(title) {
+        // Parte el título en varios nodos, como haría un link autodetectado.
+        const words = title.split(' ');
+        if (words.length < 4) return title;
+        return `${words.slice(0, 2).join(' ')} <a href="#">${words[2]}</a> ${words.slice(3).join(' ')}`;
+      }
+
+      function rowHtml(task) {
+        const rowAttrs =
+          variant === 'en' ? 'role="listitem"' : variant === 'google' ? `data-task-id="task-${task.id}"` : '';
+        return `
+          <div class="task ${task.done ? 'done' : ''}" data-mock-id="${task.id}" ${rowAttrs}>
+            <div class="handle"><span class="icon">drag_indicator</span></div>
+            <div class="cbwrap">${toggleHtml(task)}</div>
+            <div class="content">
+              <span class="sr">Tarea</span>
+              <div class="title">${titleHtml(task.title)}</div>
+              ${task.notes ? `<div class="notes">${task.notes}</div>` : ''}
+              <span class="icon" aria-hidden="true">star</span>
+            </div>
+            ${variant === 'google' ? '<button class="opts" aria-label="Opciones de tareas">⋮</button>' : ''}
+          </div>`;
+      }
+
+      function render() {
+        if (variant === 'google') {
+          document.getElementById('list2-tasks').innerHTML = tasks
+            .filter((t) => t.list === 'equipo' && !t.done)
+            .map(rowHtml)
+            .join('');
+        }
+        document.getElementById('active').innerHTML = tasks
+          .filter((t) => !t.done && t.list !== 'equipo')
+          .map(rowHtml)
+          .join('');
+        document.getElementById('completed').innerHTML = tasks
+          .filter((t) => t.done && t.list !== 'equipo')
+          .map(rowHtml)
+          .join('');
+        document.getElementById('ccount').textContent = tasks.filter((t) => t.done).length;
+      }
+
+      function toggle(row) {
+        const task = tasks.find((t) => t.id === row.dataset.mockId);
+        task.done = !task.done;
+        render();
+      }
+
+      document.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.cb')) g.mousedowns++;
+      });
+      document.addEventListener('click', (e) => {
+        const cb = e.target.closest('.cb');
+        if (cb) {
+          g.clicks++;
+          toggle(cb.closest('.task'));
+        }
+        if (e.target.closest('#completed-header')) g.headerClicks++;
+      });
+      document.addEventListener('keydown', (e) => {
+        const cb = e.target.closest && e.target.closest('.cb');
+        if (cb && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          g.keys++;
+          toggle(cb.closest('.task'));
+        }
+      });
+
+      window.__rerender = render;
+      // Como el motor de plantillas de Google: vuelve a dibujar el botón, borra
+      // los hijos que no son de su plantilla y el atributo de estado ajeno
+      // (en tasks.google.com se vio borrar data-gtp-state).
+      window.__idomPatch = (id) => {
+        const cb = document.querySelector(`[data-mock-id="${id}"] .cb`);
+        for (const child of [...cb.children]) if (!child.matches('svg, .ring-box')) child.remove();
+        for (const attr of [...cb.attributes]) if (attr.name.startsWith('data-gtp-')) cb.removeAttribute(attr.name);
+      };
+      render();
+    </script>
+  </body>
+</html>

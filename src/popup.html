@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tareas en progreso</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>En progreso <span id="count" class="count"></span></h1>
+    </header>
+
+    <ul id="list" class="list"></ul>
+    <p id="empty" class="empty" hidden>
+      No hay tareas en progreso. En Google Tasks, haz un clic en el círculo de una tarea para marcarla.
+    </p>
+
+    <footer>
+      <label class="debug">
+        <input id="debug" type="checkbox" />
+        Modo diagnóstico
+      </label>
+      <button id="clear" type="button" class="link" hidden>Quitar todas</button>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
