@@ -74,3 +74,7 @@ src/popup.*          Lista de tareas en progreso y modo diagnóstico
 icons/               Íconos de la extensión
 test/                Página de prueba y runner con playwright-core
 ```
+
+## Licencia
+
+[MIT](LICENSE).
